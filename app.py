@@ -9,11 +9,11 @@ Token = namedtuple('Token', ['tipo', 'valor'])
 
 # Definición de los tipos de tokens y sus expresiones regulares
 TOKENS = [
-    ('NUMERO', r'\d+'),  # Números enteros
-    ('OPERADOR', r'[+\-*/]'),  # Operadores aritméticos
-    ('LPAREN', r'\('),  # Paréntesis izquierdo
-    ('RPAREN', r'\)'),  # Paréntesis derecho
-    ('ESPACIO', r'\s+'),  # Espacios en blanco (a ignorar)
+    ('NUMERO', r'\d+(\.\d+)?'),  # Números enteros o decimales
+    ('OPERADOR', r'[+\-*/]'),    # Operadores aritméticos
+    ('LPAREN', r'\('),           # Paréntesis izquierdo
+    ('RPAREN', r'\)'),           # Paréntesis derecho
+    ('ESPACIO', r'\s+'),         # Espacios en blanco (a ignorar)
 ]
 
 # Compilación de las expresiones regulares
@@ -46,13 +46,13 @@ class Nodo:
 
     def to_dict(self):
         node = {'name': self.valor}
+        children = []
         if self.izquierda:
-            node['children'] = [self.izquierda.to_dict()]
+            children.append(self.izquierda.to_dict())
         if self.derecha:
-            if 'children' in node:
-                node['children'].append(self.derecha.to_dict())
-            else:
-                node['children'] = [self.derecha.to_dict()]
+            children.append(self.derecha.to_dict())
+        if children:
+            node['children'] = children
         return node
 
 
@@ -84,11 +84,16 @@ def construir_arbol(rpn_tokens):
     stack = []
     for token in rpn_tokens:
         if token.tipo == 'NUMERO':
+            # Representar los números como cadenas, incluyendo los decimales
             stack.append(Nodo(token.valor))
         elif token.tipo == 'OPERADOR':
             nodo = Nodo(token.valor)
-            nodo.derecha = stack.pop()
-            nodo.izquierda = stack.pop()
+            try:
+                nodo.derecha = stack.pop()
+                nodo.izquierda = stack.pop()
+            except IndexError:
+                # Manejo de errores en caso de una expresión inválida
+                raise ValueError("Expresión inválida")
             stack.append(nodo)
     return stack[0] if stack else None
 
@@ -97,10 +102,13 @@ def evaluar_rpn(rpn_tokens):
     stack = []
     for token in rpn_tokens:
         if token.tipo == 'NUMERO':
-            stack.append(int(token.valor))
+            stack.append(float(token.valor))  # Convertir a float para decimales
         elif token.tipo == 'OPERADOR':
-            b = stack.pop()
-            a = stack.pop()
+            try:
+                b = stack.pop()
+                a = stack.pop()
+            except IndexError:
+                raise ValueError("Expresión inválida")
             if token.valor == '+':
                 stack.append(a + b)
             elif token.valor == '-':
@@ -108,8 +116,12 @@ def evaluar_rpn(rpn_tokens):
             elif token.valor == '*':
                 stack.append(a * b)
             elif token.valor == '/':
+                if b == 0:
+                    raise ZeroDivisionError("División por cero")
                 stack.append(a / b)
-    return stack[0] if stack else None
+    if len(stack) != 1:
+        raise ValueError("Expresión inválida")
+    return stack[0]
 
 
 # Variable global para almacenar la memoria (MS)
@@ -137,7 +149,7 @@ def index():
                 valor = request.form.get('valor', '')
                 expresion += valor
             elif accion == 'Borrar':
-                expresion = borrar_ultimo_numero(expresion)
+                expresion = borrar_ultimo_caracter(expresion)
             elif accion == 'Limpiar':
                 expresion = ''
             elif accion == 'Memoria':
@@ -163,6 +175,10 @@ def index():
                     memoria_global['MS'] = resultado
                     if arbol:
                         arbol_dict = arbol.to_dict()
+                except ZeroDivisionError as zde:
+                    mensaje_error = f'Error: {zde}'
+                except ValueError as ve:
+                    mensaje_error = f'Error: {ve}'
                 except Exception as e:
                     mensaje_error = f'Error al calcular la expresión: {e}'
 
@@ -179,12 +195,12 @@ def index():
                            memoria=memoria_global['MS'])
 
 
-def borrar_ultimo_numero(expresion):
-    i = len(expresion) - 1
-    while i >= 0 and expresion[i].isdigit():
-        i -= 1
-    return expresion[:i + 1]
+def borrar_ultimo_caracter(expresion):
+    """
+    Elimina el último carácter ingresado en la expresión, ya sea un número, operador o cualquier otro símbolo.
+    """
+    return expresion[:-1] if expresion else expresion
 
 
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True)
